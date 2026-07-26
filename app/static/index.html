@@ -65,6 +65,11 @@
   .warn-box { background:rgba(251,191,36,.1); border:1px solid var(--warn);
               color:var(--warn); padding:10px 12px; border-radius:8px;
               font-size:13px; margin:10px 0; }
+  .dropzone { border:2px dashed var(--line); border-radius:8px; padding:20px;
+             text-align:center; cursor:pointer; transition:all .2s; }
+  .dropzone:hover, .dropzone.drag { border-color:var(--accent); background:rgba(110,168,254,.1); }
+  .dropzone input { display:none; }
+  #noCVBox { margin-bottom:20px; }
 </style>
 </head>
 <body>
@@ -80,6 +85,7 @@
   </div>
 </header>
 <main>
+  <div id="noCVBox"></div>
   <div class="kbd" style="margin-bottom:12px">
     <kbd>J</kbd>/<kbd>K</kbd> move &nbsp; <kbd>A</kbd> apply &nbsp; <kbd>S</kbd> skip
   </div>
@@ -111,6 +117,71 @@ async function loadStats() {
      <span><b>${s.totals.sent}</b> sent</span>
      <span><b>${s.totals.flagged}</b> flagged</span>
      <span>spend <b>$${s.cost_to_date}</b></span>`;
+}
+
+async function checkCVs() {
+  const res = await fetch('/api/variants');
+  const variants = await res.json();
+  const box = document.getElementById('noCVBox');
+  if (!variants.length) {
+    box.innerHTML = `
+      <div class="warn-box">
+        <b>No CV variants loaded.</b> Drag your CV files here to upload them.
+        <div class="dropzone" id="dropzone" style="margin-top:12px">
+          <p>📄 Drag .docx files here or click to upload</p>
+          <input type="file" id="fileInput" accept=".docx" multiple>
+        </div>
+      </div>`;
+    setupDropzone();
+  } else {
+    box.innerHTML = '';
+  }
+}
+
+function setupDropzone() {
+  const dz = document.getElementById('dropzone');
+  const inp = document.getElementById('fileInput');
+
+  dz.onclick = () => inp.click();
+
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evt =>
+    dz.addEventListener(evt, e => e.preventDefault()));
+
+  dz.addEventListener('dragover', () => dz.classList.add('drag'));
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+
+  dz.addEventListener('drop', (e) => {
+    dz.classList.remove('drag');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  inp.addEventListener('change', () => handleFiles(inp.files));
+}
+
+async function handleFiles(files) {
+  for (const file of files) {
+    if (!file.name.endsWith('.docx')) {
+      alert(`Skipping ${file.name} - must be .docx`);
+      continue;
+    }
+    const name = prompt(`Name for this CV? (default: ${file.name.replace('.docx','')})`)
+                 || file.name.replace('.docx','');
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('name', name);
+
+    try {
+      const r = await (await fetch('/api/upload-cv', {method:'POST', body:formData})).json();
+      if (r.ok) {
+        alert(`✓ Uploaded: ${r.name}`);
+        checkCVs();
+        load();
+      }
+    } catch(err) {
+      alert(`Error uploading ${file.name}: ${err}`);
+    }
+  }
 }
 
 function render() {
@@ -250,6 +321,7 @@ function scrollTo_() {
   document.querySelector('.card.sel')?.scrollIntoView({block:'center', behavior:'smooth'});
 }
 
+checkCVs();
 load();
 </script>
 </body>

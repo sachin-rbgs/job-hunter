@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
@@ -167,6 +167,46 @@ def variants(session: Session = Depends(get_session)) -> list[dict]:
          "bullets": len(v.bullets or []), "active": v.active}
         for v in session.exec(select(CVVariant)).all()
     ]
+
+
+@app.post("/api/upload-cv")
+async def upload_cv(file: UploadFile = File(...), name: str = "",
+                    session: Session = Depends(get_session)) -> dict:
+    """Upload a CV variant .docx file."""
+    from app.cv.loader import extract
+
+    if not name:
+        name = Path(file.filename).stem if file.filename else "Uploaded"
+
+    contents = await file.read()
+    safe_name = name.replace(" ", "_").replace("&", "and")
+    dest = config.CV_DIR / f"{safe_name}.docx"
+    dest.write_bytes(contents)
+
+    try:
+        full_text, bullets = extract(dest)
+    except Exception as exc:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, f"Failed to parse CV: {exc}")
+
+    # Check if variant already exists
+    variant = session.exec(select(CVVariant).where(CVVariant.name == name)).first()
+    if variant:
+        variant.file_path = str(dest)
+        variant.full_text = full_text
+        variant.bullets = bullets
+    else:
+        variant = CVVariant(
+            name=name,
+            file_path=str(dest),
+            full_text=full_text,
+            bullets=bullets,
+            lean_tags=[]
+        )
+        session.add(variant)
+
+    session.commit()
+    return {"ok": True, "name": name, "file": str(dest)}
 
 
 @app.post("/api/ingest")
