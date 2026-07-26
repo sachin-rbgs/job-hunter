@@ -89,7 +89,7 @@ class Application(SQLModel, table=True):
 class DailyStats(SQLModel, table=True):
     __tablename__ = "daily_stats"
 
-    date: date = Field(primary_key=True)
+    stats_date: date = Field(primary_key=True)
     jobs_pulled: int = 0
     jobs_qualified: int = 0
     apps_sent: int = 0
