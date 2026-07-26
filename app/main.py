@@ -95,7 +95,7 @@ def set_status(app_id: int, payload: dict,
     if status == "sent":
         application.sent_at = datetime.utcnow()
         today = date.today()
-        stats = session.get(DailyStats, today) or DailyStats(date=today)
+        stats = session.get(DailyStats, today) or DailyStats(stats_date=today)
         stats.apps_sent = (stats.apps_sent or 0) + 1
         session.add(stats)
 
@@ -133,7 +133,7 @@ def download_cv(app_id: int, session: Session = Depends(get_session)):
 
 @app.get("/api/stats")
 def stats(session: Session = Depends(get_session)) -> dict:
-    rows = session.exec(select(DailyStats).order_by(DailyStats.date.desc()).limit(30)).all()
+    rows = session.exec(select(DailyStats).order_by(DailyStats.stats_date.desc()).limit(30)).all()
     applications = session.exec(select(Application)).all()
 
     by_variant: dict[str, dict] = {}
