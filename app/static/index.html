@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Hunter</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --line: #2a2f3a;
+    --text: #e6e8ec; --muted: #949aa8; --accent: #6ea8fe; --good: #4ade80;
+    --warn: #fbbf24; --bad: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { position:sticky; top:0; z-index:10; background:var(--panel);
+           border-bottom:1px solid var(--line); padding:14px 20px;
+           display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  h1 { font-size:17px; margin:0; font-weight:600; letter-spacing:-.01em; }
+  .stats { color:var(--muted); font-size:13px; display:flex; gap:14px; flex-wrap:wrap; }
+  .stats b { color:var(--text); font-weight:600; }
+  .filters { margin-left:auto; display:flex; gap:6px; }
+  button { background:var(--panel2); color:var(--text); border:1px solid var(--line);
+           padding:6px 12px; border-radius:7px; cursor:pointer; font-size:13px; }
+  button:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); color:#0b1020; border-color:var(--accent); font-weight:600; }
+  main { max-width:1000px; margin:0 auto; padding:20px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+          padding:18px; margin-bottom:14px; }
+  .card.sel { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  .top { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
+  .title { font-size:17px; font-weight:600; margin:0 0 3px; }
+  .co { color:var(--muted); font-size:14px; }
+  .score { text-align:right; flex-shrink:0; }
+  .big { font-size:26px; font-weight:700; line-height:1; }
+  .lbl { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0; }
+  .chip { font-size:12px; padding:3px 9px; border-radius:20px;
+          background:var(--panel2); border:1px solid var(--line); color:var(--muted); }
+  .chip.flag { background:rgba(248,113,113,.12); border-color:var(--bad); color:var(--bad); }
+  .chip.ok { background:rgba(74,222,128,.1); border-color:var(--good); color:var(--good); }
+  .chip.cv { background:rgba(110,168,254,.12); border-color:var(--accent); color:var(--accent); }
+  .align { display:flex; align-items:center; gap:10px; margin:14px 0;
+           padding:12px; background:var(--panel2); border-radius:9px; }
+  .bar { flex:1; height:7px; background:#2a2f3a; border-radius:4px; overflow:hidden; }
+  .fill { height:100%; border-radius:4px; transition:width .3s; }
+  .arrow { color:var(--muted); font-size:13px; }
+  details { margin-top:10px; }
+  summary { cursor:pointer; color:var(--accent); font-size:13px; padding:5px 0;
+            user-select:none; }
+  .edit { background:var(--panel2); border-left:2px solid var(--accent);
+          padding:10px 12px; margin:8px 0; border-radius:0 7px 7px 0; font-size:13.5px; }
+  .was { color:var(--bad); text-decoration:line-through; opacity:.6; }
+  .now { color:var(--good); }
+  .why { color:var(--muted); font-size:12px; margin-top:5px; font-style:italic; }
+  textarea { width:100%; min-height:180px; background:var(--panel2); color:var(--text);
+             border:1px solid var(--line); border-radius:8px; padding:12px;
+             font:14px/1.6 inherit; resize:vertical; }
+  .actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .primary { background:var(--accent); color:#0b1020; font-weight:600; border-color:var(--accent); }
+  .empty { text-align:center; color:var(--muted); padding:70px 20px; }
+  .kbd { font-size:12px; color:var(--muted); }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-radius:4px;
+        padding:1px 5px; font-size:11px; }
+  .warn-box { background:rgba(251,191,36,.1); border:1px solid var(--warn);
+              color:var(--warn); padding:10px 12px; border-radius:8px;
+              font-size:13px; margin:10px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Job Hunter</h1>
+  <div class="stats" id="stats"></div>
+  <div class="filters">
+    <button data-f="pending" class="on">Pending</button>
+    <button data-f="flagged">Flagged</button>
+    <button data-f="sent">Sent</button>
+    <button data-f="all">All</button>
+    <button id="run">Run ingest</button>
+  </div>
+</header>
+<main>
+  <div class="kbd" style="margin-bottom:12px">
+    <kbd>J</kbd>/<kbd>K</kbd> move &nbsp; <kbd>A</kbd> apply &nbsp; <kbd>S</kbd> skip
+  </div>
+  <div id="list"></div>
+</main>
+
+<script>
+let items = [], filter = 'pending', cursor = 0;
+
+const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+const colour = n => n >= 85 ? 'var(--good)' : n >= 70 ? 'var(--warn)' : 'var(--bad)';
+
+async function load() {
+  const q = filter === 'flagged' ? 'all' : filter;
+  const res = await fetch(`/api/queue?status=${q}`);
+  items = await res.json();
+  if (filter === 'flagged') items = items.filter(i => i.flagged);
+  cursor = 0;
+  render();
+  loadStats();
+}
+
+async function loadStats() {
+  const s = await (await fetch('/api/stats')).json();
+  document.getElementById('stats').innerHTML =
+    `<span><b>${s.totals.pending}</b> pending</span>
+     <span><b>${s.totals.sent}</b> sent</span>
+     <span><b>${s.totals.flagged}</b> flagged</span>
+     <span>spend <b>$${s.cost_to_date}</b></span>`;
+}
+
+function render() {
+  const el = document.getElementById('list');
+  if (!items.length) {
+    el.innerHTML = `<div class="empty">Nothing here. Run an ingest to pull today's jobs.</div>`;
+    return;
+  }
+  el.innerHTML = items.map((it, i) => {
+    const j = it.job;
+    const before = it.alignment_before ?? 0, after = it.alignment_after ?? 0;
+    const salary = j.salary_min
+      ? `£${(j.salary_min/1000).toFixed(0)}k${j.salary_max ? '-£'+(j.salary_max/1000).toFixed(0)+'k' : ''}`
+      : 'not stated';
+
+    const flags = (j.red_flags || []).map(f =>
+      `<span class="chip flag">${esc(f.replace(/_/g,' '))}</span>`).join('');
+    const gen = it.flagged
+      ? `<div class="warn-box"><b>Needs review.</b> ${(it.flag_reasons||[]).map(esc).join('; ')}</div>` : '';
+
+    const edits = (it.bullet_edits || []).map(e => `
+      <div class="edit">
+        <div class="was">${esc(e.original)}</div>
+        <div class="now">${esc(e.revised)}</div>
+        <div class="why">${esc(e.why)}</div>
+      </div>`).join('') || '<div class="why">No bullet edits needed.</div>';
+
+    const added = (it.added_skills || []).length
+      ? `<div class="edit"><div class="now">+ ${(it.added_skills||[]).map(esc).join(', ')}</div>
+         <div class="why">Added from your master skills profile, all previously evidenced.</div></div>` : '';
+
+    const gaps = (it.skills_gap || []).length
+      ? `<details><summary>Honest gaps (${it.skills_gap.length})</summary>
+         <div class="chips">${it.skills_gap.map(g=>`<span class="chip">${esc(g)}</span>`).join('')}</div>
+         <div class="why">Not claimed anywhere in your profile, so deliberately left out.</div></details>` : '';
+
+    return `
+    <div class="card ${i===cursor?'sel':''}" data-i="${i}">
+      <div class="top">
+        <div>
+          <p class="title">${esc(j.title)}</p>
+          <div class="co">${esc(j.company)} &middot; ${esc(j.location||'?')}
+            ${j.commute_miles!=null?` &middot; ${j.commute_miles} mi`:''} &middot; ${salary}</div>
+        </div>
+        <div class="score">
+          <div class="big" style="color:${colour(j.match_score)}">${j.match_score}</div>
+          <div class="lbl">match</div>
+        </div>
+      </div>
+
+      <div class="chips">
+        <span class="chip cv">CV: ${esc(it.cv_variant||'none')}</span>
+        ${j.remote?`<span class="chip">${esc(j.remote)}</span>`:''}
+        ${(it.key_skill_matches||[]).slice(0,6).map(k=>`<span class="chip ok">${esc(k)}</span>`).join('')}
+        ${flags}
+      </div>
+
+      ${gen}
+
+      <div class="align">
+        <div class="lbl">ATS alignment</div>
+        <span style="color:var(--muted)">${before}%</span>
+        <div class="bar"><div class="fill" style="width:${after}%;background:${colour(after)}"></div></div>
+        <span class="arrow">&rarr;</span>
+        <b style="color:${colour(after)}">${after}%</b>
+      </div>
+
+      <div class="why">${esc(it.cv_reasoning||'')} ${esc(it.match_rationale||'')}</div>
+
+      <details><summary>CV edits (${(it.bullet_edits||[]).length})</summary>${edits}${added}</details>
+      ${gaps}
+      <details open><summary>Cover letter</summary>
+        <textarea data-cl="${it.id}">${esc(it.cover_letter||'')}</textarea>
+      </details>
+
+      <div class="actions">
+        <button class="primary" onclick="apply(${it.id},'${esc(j.apply_url)}')">Open &amp; apply</button>
+        ${it.has_cv?`<button onclick="window.open('/api/applications/${it.id}/cv')">Download CV</button>`:''}
+        <button onclick="saveCL(${it.id})">Save letter</button>
+        <button onclick="setStatus(${it.id},'skipped')">Skip</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function apply(id, url) {
+  const ta = document.querySelector(`[data-cl="${id}"]`);
+  if (ta) { try { await navigator.clipboard.writeText(ta.value); } catch {} }
+  window.open(url, '_blank');
+  await setStatus(id, 'sent');
+}
+
+async function saveCL(id) {
+  const ta = document.querySelector(`[data-cl="${id}"]`);
+  await fetch(`/api/applications/${id}/cover_letter`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({cover_letter: ta.value})
+  });
+  ta.style.borderColor = 'var(--good)';
+  setTimeout(()=>ta.style.borderColor='', 900);
+}
+
+async function setStatus(id, status) {
+  let skip_reason = null;
+  if (status === 'skipped') skip_reason = prompt('Why skip? (optional)') || null;
+  await fetch(`/api/applications/${id}/status`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({status, skip_reason})
+  });
+  load();
+}
+
+document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('[data-f]').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); filter = b.dataset.f; load();
+});
+
+document.getElementById('run').onclick = async (e) => {
+  e.target.textContent = 'Running...'; e.target.disabled = true;
+  const r = await (await fetch('/api/ingest', {method:'POST'})).json();
+  e.target.textContent = 'Run ingest'; e.target.disabled = false;
+  alert(r.error ? r.error
+    : `Pulled ${r.pulled}, qualified ${r.qualified}, tailored ${r.generated}.\nCost $${(r.llm_cost_usd+r.apify_cost_usd).toFixed(3)}`);
+  load();
+};
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if (k === 'j' && cursor < items.length-1) { cursor++; render(); scrollTo_(); }
+  if (k === 'k' && cursor > 0) { cursor--; render(); scrollTo_(); }
+  if (k === 'a' && items[cursor]) apply(items[cursor].id, items[cursor].job.apply_url);
+  if (k === 's' && items[cursor]) setStatus(items[cursor].id, 'skipped');
+});
+
+function scrollTo_() {
+  document.querySelector('.card.sel')?.scrollIntoView({block:'center', behavior:'smooth'});
+}
+
+load();
+</script>
+</body>
+</html>
